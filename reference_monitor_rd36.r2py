@@ -24,6 +24,12 @@ class ABFile():
     # local (per object) reference to the underlying file
     self.Afn = filename+'.a'
     self.Bfn = filename+'.b'
+    def _init_(self,filename,create):
+        # globals
+        mycontext['debug'] = False
+        # local (per object) reference to the underlying file
+        self.Afn = filename+'.a'
+        self.Bfn = filename+'.b'
 
     # make the files and add 'SE' to the readat file...
     if create:
