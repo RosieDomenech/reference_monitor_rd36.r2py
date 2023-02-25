@@ -34,17 +34,14 @@ class ABFile():
             if not a_file_contents:
                 self.Afile.writeat('SE',0)
 
-  def writeat(self,data,offset):
+    def writeat(self,data,offset):
         # Write the requested data to the B file using the sandbox's writeat call
         self.Bfile.writeat(data,offset)
 
-  def readat(self,bytes,offset):
+    def readat(self,bytes,offset):
         # Read from the A file using the sandbox's readat...
         return self.Afile.readat(bytes,offset)
 
-  def close(self):
-    self.Afile.close()
-    self.Bfile.close()
     def close(self):
         # if Bfile is valid, write contents to Afile
         b_file_contents = self.Bfile.readat(None, 0)
@@ -59,7 +56,6 @@ class ABFile():
 
 
 def ABopenfile(filename, create):
-  return ABFile(filename,create)
     return ABFile(filename,create)
 
 
