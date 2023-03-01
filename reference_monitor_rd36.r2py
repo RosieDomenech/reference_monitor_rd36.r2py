@@ -1,14 +1,3 @@
-"""
-This security layer inadequately handles A/B storage for files in RepyV2.
-
-
-
-Note:
-    This security layer uses encasementlib.r2py, restrictions.default, repy.py and Python
-    Also you need to give it an application to run.
-    python repy.py restrictions.default encasementlib.r2py [security_layer].r2py [attack_program].r2py 
-    
-    """ 
 TYPE="type"
 ARGS="args"
 RETURN="return"
@@ -24,49 +13,48 @@ class ABFile():
     # local (per object) reference to the underlying file
     self.Afn = filename+'.a'
     self.Bfn = filename+'.b'
-    self.temp_file = filename
 
     # make the files and add 'SE' to the readat file...
     if create:
-      self.Afile = openfile(self.Afn,create)
-      self.Bfile = openfile(self.Bfn,create)
-      self.Afile.writeat('SE',0)
-      self.temp_file = openfile(self.temp_file,create)
+        self.Afile = openfile(self.Afn,create)
+        self.Bfile = openfile(self.Bfn,create)
+        try:
+            self.Afile.readat(1,1)
+        except:
+            self.Afile.writeat('SE',0)
     else:
-      self.Afile = openfile(self.Afn,True)
-      self.Bfile = openfile(self.Bfn,True)
-      self.temp_file = openfile(self.temp_file,False)
-      read_text = self.temp_file.readat(None,0)
-      self.Afile.writeat(read_text,0)
-      self.Bfile.writeat(read_text,0)
-      
+        self.Afile = openfile(self.Afn,create)
+        self.Bfile = openfile(self.Bfn,create)
 
 
   def writeat(self,data,offset):
     
     # Write the requested data to the B file using the sandbox's writeat call
-    self.Bfile.writeat(data,offset)
+    firstChar = data[0]
+    lastChar = data[len(data)-1]
+    if firstChar == 'S' and lastChar == 'E':
+        self.Bfile.writeat(data,offset)
   
   def readat(self,bytes,offset):
     # Read from the A file using the sandbox's readat...
     return self.Afile.readat(bytes,offset)
 
   def close(self):
-    test_data = self.Bfile.readat(None,0)
-    size = len(test_data)
-    if(test_data[0] == 'S' and test_data[size-1] == 'E'):
-	self.Afile.writeat(test_data,0)
+    if self.Bfile.readat(1,0) == 'S':
+        string=""
+        try:
+            i=0;
+            while(1):
+                string+=self.Bfile.readat(1,i)
+                i = i+1
+        except SeekPastEndOfFileError:
+            lastchar = self.Bfile.readat(1,i-2)
+        if lastchar == 'E':
+            self.Afile.writeat(string,0)
     else:
-	self.Bfile.close()
-	removefile(self.Bfn)
-	self.Bfile_new = openfile(self.Bfn,True)
-	backup_data = self.Afile.readat(None,0)
-	self.Bfile_new.writeat(backup_data,0)
-	self.Bfile_new.close()
-    restore_data = self.Afile.readat(None,0)
-    self.temp_file.writeat(restore_data,0)
+        self.Bfile.writeat("SE",0)
     self.Afile.close()
-    self.temp_file.close()
+    self.Bfile.close()
 
 
 def ABopenfile(filename, create):
