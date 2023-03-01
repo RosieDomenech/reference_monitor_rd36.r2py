@@ -1,3 +1,4 @@
+
 TYPE="type"
 ARGS="args"
 RETURN="return"
@@ -9,52 +10,36 @@ OBJC="objc"
 class ABFile():
   def __init__(self,filename,create):
     # globals
-    mycontext['debug'] = False   
+    mycontext['debug'] = False
     # local (per object) reference to the underlying file
+    self.lock = createlock()
+    self.lock.acquire(True)
     self.Afn = filename+'.a'
     self.Bfn = filename+'.b'
-
+    self.Afile = openfile(self.Afn,create)
+    self.Bfile = openfile(self.Bfn,create)
     # make the files and add 'SE' to the readat file...
     if create:
-        self.Afile = openfile(self.Afn,create)
-        self.Bfile = openfile(self.Bfn,create)
-        try:
-            self.Afile.readat(1,1)
-        except:
-            self.Afile.writeat('SE',0)
-    else:
-        self.Afile = openfile(self.Afn,create)
-        self.Bfile = openfile(self.Bfn,create)
+      self.Afile.writeat('SE',0)
 
 
   def writeat(self,data,offset):
-    
+
     # Write the requested data to the B file using the sandbox's writeat call
-    firstChar = data[0]
-    lastChar = data[len(data)-1]
-    if firstChar == 'S' and lastChar == 'E':
-        self.Bfile.writeat(data,offset)
-  
+    self.Bfile.writeat(data,offset)
+
   def readat(self,bytes,offset):
     # Read from the A file using the sandbox's readat...
     return self.Afile.readat(bytes,offset)
 
   def close(self):
-    if self.Bfile.readat(1,0) == 'S':
-        string=""
-        try:
-            i=0;
-            while(1):
-                string+=self.Bfile.readat(1,i)
-                i = i+1
-        except SeekPastEndOfFileError:
-            lastchar = self.Bfile.readat(1,i-2)
-        if lastchar == 'E':
-            self.Afile.writeat(string,0)
-    else:
-        self.Bfile.writeat("SE",0)
+    if self.Bfile.readat(1,0) == 'S' and self.Bfile.readat(None, 0)[-1] == 'E':
+        v = self.Bfile.readat(None,0)
+        self.Afile.writeat(v,0)
+        self.Bfile.writeat("",0)
     self.Afile.close()
     self.Bfile.close()
+    self.lock.release()
 
 
 def ABopenfile(filename, create):
