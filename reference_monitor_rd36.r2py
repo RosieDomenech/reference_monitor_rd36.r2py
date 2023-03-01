@@ -1,4 +1,14 @@
+"""
+This security layer inadequately handles A/B storage for files in RepyV2.
 
+
+
+Note:
+    This security layer uses encasementlib.r2py, restrictions.default, repy.py and Python
+    Also you need to give it an application to run.
+    python repy.py restrictions.default encasementlib.r2py [security_layer].r2py [attack_program].r2py 
+    
+    """ 
 TYPE="type"
 ARGS="args"
 RETURN="return"
@@ -10,37 +20,71 @@ OBJC="objc"
 class ABFile():
   def __init__(self,filename,create):
     # globals
-    mycontext['debug'] = False
+    mycontext['debug'] = False   
     # local (per object) reference to the underlying file
-    self.lock = createlock()
-    self.lock.acquire(True)
+
+    self.Ffn = filename
     self.Afn = filename+'.a'
     self.Bfn = filename+'.b'
-    self.Afile = openfile(self.Afn,create)
-    self.Bfile = openfile(self.Bfn,create)
+
+    self.Lock = createlock()
+
+    self.Lock.acquire(True)
+
+    if self.Afn in listfiles():
+        removefile(self.Afn)
+
+    if self.Bfn in listfiles():
+        removefile(self.Bfn)
+    
+
+    self.Afile = openfile(self.Afn,True)
+    self.Bfile = openfile(self.Bfn,True)
+
     # make the files and add 'SE' to the readat file...
     if create:
-      self.Afile.writeat('SE',0)
-
+        self.Afile.writeat('SE',0)
+    else:
+        self.Ffile = openfile(self.Ffn,False)
+        contentsF = self.Ffile.readat(None,0)
+        self.Ffile.close()
+        self.Afile.writeat(contentsF,0)
+    self.Lock.release()
 
   def writeat(self,data,offset):
-
+    self.Lock.acquire(True)
     # Write the requested data to the B file using the sandbox's writeat call
     self.Bfile.writeat(data,offset)
+    self.Lock.release()
 
   def readat(self,bytes,offset):
+    self.Lock.acquire(True)
     # Read from the A file using the sandbox's readat...
-    return self.Afile.readat(bytes,offset)
+    ret = self.Afile.readat(bytes,offset)
+    self.Lock.release()
+    return ret
 
   def close(self):
-    if self.Bfile.readat(1,0) == 'S' and self.Bfile.readat(None, 0)[-1] == 'E':
-        v = self.Bfile.readat(None,0)
-        self.Afile.writeat(v,0)
-        self.Bfile.writeat("",0)
-    self.Afile.close()
-    self.Bfile.close()
-    self.lock.release()
 
+    self.Lock.acquire(True)
+
+    contentsB = self.Bfile.readat(None,0)
+    self.Bfile.close()
+    removefile(self.Bfn) #delete file B
+
+    if contentsB.startswith('S'): #check that we have SE format
+        if contentsB.endswith('E'): #check that we have SE format
+            self.Afile.writeat(contentsB,0) #write fileB to fileA
+            if self.Ffn in listfiles():
+                removefile(self.Ffn)
+            self.Ffile = openfile(self.Ffn,True)
+            self.Ffile.writeat(contentsB,0)
+            self.Ffile.close()
+
+
+    self.Afile.close()
+
+    self.Lock.release()
 
 def ABopenfile(filename, create):
   return ABFile(filename,create)
