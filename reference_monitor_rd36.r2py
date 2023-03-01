@@ -1,5 +1,14 @@
 """
+This security layer inadequately handles A/B storage for files in RepyV2.
 
+
+
+Note:
+    This security layer uses encasementlib.r2py, restrictions.default, repy.py and Python
+    Also you need to give it an application to run.
+    python repy.py restrictions.default encasementlib.r2py [security_layer].r2py [attack_program].r2py 
+    
+    """ 
 TYPE="type"
 ARGS="args"
 RETURN="return"
@@ -11,114 +20,60 @@ OBJC="objc"
 class ABFile():
   def __init__(self,filename,create):
     # globals
-    mycontext['debug'] = False
+    mycontext['debug'] = False   
     # local (per object) reference to the underlying file
     self.Afn = filename+'.a'
     self.Bfn = filename+'.b'
+    self.temp_file = filename
 
-    #Create A/B Files
+    # make the files and add 'SE' to the readat file...
     if create:
-      #Checks if Backup File already present, else Creates A/B Files and writes "SE" to A
-      if self.Afn in listfiles():
-        #Backup File Present, open A/B File -> Original A File, Empty B File
-        self.Afile = openfile(self.Afn,create)
-        self.Bfile = openfile(self.Bfn,create)
-        self.Bfile.writeat(self.Afile.readat(None,0),0)
-      else:
-        self.Afile = openfile(self.Afn,create)
-        self.Bfile = openfile(self.Bfn,create)
-        self.Afile.writeat('SE', 0)
+      self.Afile = openfile(self.Afn,create)
+      self.Bfile = openfile(self.Bfn,create)
+      self.Afile.writeat('SE',0)
+      self.temp_file = openfile(self.temp_file,create)
     else:
-      #Check if Backup File Present, else raise an Exception
-      if self.Afn in listfiles():
-        self.Afile = openfile(self.Afn,True)
-        self.Bfile = openfile(self.Bfn,True)
-        self.Bfile.writeat(self.Afile.readat(None,0),0)
-      else:
-        raise FileNotFoundError
+      self.Afile = openfile(self.Afn,True)
+      self.Bfile = openfile(self.Bfn,True)
+      self.temp_file = openfile(self.temp_file,False)
+      read_text = self.temp_file.readat(None,0)
+      self.Afile.writeat(read_text,0)
+      self.Bfile.writeat(read_text,0)
+      
 
-#WriteAt Function - Lock, Offset and Length Validation then Write the Data
-#For Write Call, Lock provides better handling of multiple writes to a file
+
   def writeat(self,data,offset):
-    #Creating the Lock
-    self.lock = createlock()
-    #Set the Lock to Blocking
-    self.lock.acquire(True)
-    #Offset Validation for Write Call
-    if offset < 0:
-        raise RepyArgumentError
-        self.lock.release()
-    elif offset > len(self.Bfile.readat(None,0)):
-        raise SeekPastEndOfFileError
-        self.lock.release()
-    else:
-      #After Correct Validation -> Write to File and Release Lock
-      self.Bfile.writeat(data,offset)
-      self.lock.release()
-
-#ReadAt Function - Offset and Length Validation then Read & Return ReadData
+    
+    # Write the requested data to the B file using the sandbox's writeat call
+    self.Bfile.writeat(data,offset)
+  
   def readat(self,bytes,offset):
-    #Creating the Lock
-    self.lock = createlock()
-    #Set the Lock to Blocking
-    self.lock.acquire(True)
-    #Offset and Length Validation for Read Call
-    length = len(self.Afile.readat(None,0))
-    if offset < 0 or length < 0:
-      raise RepyArgumentError
-      self.lock.release()
-    elif offset >= len(self.Afile.readat(None,0)):
-      raise SeekPastEndOfFileError
-      self.lock.release()
-    elif bytes > length and bytes != None:
-      raise SeekPastEndOfFileError
-      self.lock.release()
-    elif (len(self.Afile.readat(None,0)) < offset+length) and bytes != None:
-      raise RepyArgumentError
-      self.lock.release()
-    else:
-      #Try Reading the File else raise Exception
-      try:
-         read_data = self.Afile.readat(bytes,offset)
-         self.lock.release()
-         return read_data
-      except:
-         raise RepyArgumentError
+    # Read from the A file using the sandbox's readat...
+    return self.Afile.readat(bytes,offset)
 
-#Close Function Call - If both files are valid, older one is discarded else invalid file is discarded
   def close(self):
-    #Data stored in variables for restoration of data
-    backup_data = self.Afile.readat(None,0)
-    data = self.Bfile.readat(None,0)
-    backupfile = self.Afn
-    #Check if the written file starts with "S" and ends with "E"
-    if self.Bfile.readat(None,0).startswith("S") and self.Bfile.readat(None,0).endswith("E"):
-      #The Written File is Valid -> Discard Older Version
-      self.Afile.close()
-      self.Bfile.close()
-      removefile(self.Afn)
-      openfile(backupfile,True).writeat(data,0)
-      removefile(self.Bfn)
-
-      #Extra Credit - Storing Older Versions of Backup Files
-      filecount = 0
-      for file in listfiles():
-        if file.startswith(backupfile):
-          filecount = filecount + 1
-      if filecount > 0 and backup_data != data:
-        storeold = backupfile+".old"+str(filecount)
-        openfile(storeold,True).writeat(backup_data,0)
+    test_data = self.Bfile.readat(None,0)
+    size = len(test_data)
+    if(test_data[0] == 'S' and test_data[size-1] == 'E'):
+	self.Afile.writeat(test_data,0)
     else:
-      #The Written File is Invalid -> Discard Invalid File
-      self.Afile.close()
-      self.Bfile.close()
-      removefile(self.Afn)
-      openfile(backupfile,True).writeat(backup_data,0)
-      removefile(self.Bfn)
+	self.Bfile.close()
+	removefile(self.Bfn)
+	self.Bfile_new = openfile(self.Bfn,True)
+	backup_data = self.Afile.readat(None,0)
+	self.Bfile_new.writeat(backup_data,0)
+	self.Bfile_new.close()
+    restore_data = self.Afile.readat(None,0)
+    self.temp_file.writeat(restore_data,0)
+    self.Afile.close()
+    self.temp_file.close()
 
-#Opens A/B Files if exist, else gives an Exception -> File Not Found
+
 def ABopenfile(filename, create):
   return ABFile(filename,create)
+
+
+
 
 # The code here sets up type checking and variable hiding for you.  You
 # should not need to change anything below here.
